@@ -1,1 +1,30 @@
+# Local / machine-specific
+local.properties
+*.iml
+
+# Gradle
+.gradle/
+build/
+
+# Android Studio / IntelliJ
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystores (never commit signing material)
+*.jks
+*.keystore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LibreOffice / editor lock files
+.~lock.*#
+
+# ONNX model weights (100MB+ GitHub limit; download per README)
+app/src/main/assets/models/**/*.onnx
+
+# Project-specific
 project_plan.docx
