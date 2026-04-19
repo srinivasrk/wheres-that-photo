@@ -188,4 +188,3 @@ Source code license TBD. Model weights (Gemma, MobileCLIP, MiniLM) are governed 
 ---
 
 *Where's That Photo — find the shot, keep the memory private.*
-                                                                                                                                                       
