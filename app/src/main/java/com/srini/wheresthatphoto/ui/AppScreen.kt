@@ -800,10 +800,31 @@ private fun PhotoDetailSheetContent(
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.secondary
         )
-        Text(
-            text = captionText ?: "Loading…",
-            style = MaterialTheme.typography.bodyMedium
-        )
+        if (recaptioning) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .width(20.dp)
+                        .height(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    text = "Generating new caption with Gemma…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Text(
+                text = captionText ?: "Loading…",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         recaptionError?.let {
             Text(
                 text = it,

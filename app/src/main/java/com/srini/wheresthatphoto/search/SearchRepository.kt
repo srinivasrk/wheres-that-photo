@@ -118,9 +118,10 @@ class SearchRepository(
 
             // ── Gemma reranking fallback ──────────────────────────────────────────
             // Normal vector search found nothing (likely a synonym gap, e.g. "god"
-            // for a photo captioned "deity"). Lower the threshold, collect the top
-            // candidates by fused score, and ask Gemma to judge each caption.
-            Log.i(TAG, "search: 0 vector results — running Gemma reranking fallback")
+            // for a photo captioned "deity"). Collect the top candidates by fused
+            // score and send ALL captions to Gemma in one batched prompt — one
+            // inference call instead of one per photo.
+            Log.i(TAG, "search: 0 vector results — running Gemma batch reranking")
             val candidates = photos.keys
                 .mapNotNull { id ->
                     val clipEmb = clipEmbeddings[id] ?: return@mapNotNull null
@@ -130,27 +131,28 @@ class SearchRepository(
                     val fused   = 0.45f * clipSim + 0.55f * capSim
                     Triple(id, fused, captionsById[id]?.text.orEmpty())
                 }
-                .filter { (_, fused, _) -> fused > GEMMA_CANDIDATE_THRESHOLD }
+                .filter { (_, fused, caption) -> fused > GEMMA_CANDIDATE_THRESHOLD && caption.isNotBlank() }
                 .sortedByDescending { (_, fused, _) -> fused }
                 .take(GEMMA_MAX_CANDIDATES)
 
-            Log.i(TAG, "search: Gemma evaluating ${candidates.size} candidate(s)")
-            val gemmaResults = candidates.mapNotNull { (id, fused, caption) ->
-                if (caption.isBlank()) return@mapNotNull null
-                val relevant = gemmaCaptioner.judgeRelevance(q, caption)
-                if (!relevant) return@mapNotNull null
-                val photo = photos[id] ?: return@mapNotNull null
-                val clipSim = cosineSimilarity(clipQ, clipEmbeddings[id]!!)
-                val capSim  = cosineSimilarity(capQ, captionEmbeddings[id]!!)
-                SearchResult(
-                    photoId = id,
-                    uri = photo.uri,
-                    score = fused,
-                    clipSimilarity = clipSim,
-                    captionEmbeddingSimilarity = capSim,
-                    lexicalMatch = false
-                )
-            }
+            Log.i(TAG, "search: sending ${candidates.size} caption(s) to Gemma in one call")
+            val captions = candidates.map { (_, _, caption) -> caption }
+            val judgments = gemmaCaptioner.judgeRelevanceBatch(q, captions)
+
+            val gemmaResults = candidates.zip(judgments)
+                .filter { (_, relevant) -> relevant }
+                .mapNotNull { (candidate, _) ->
+                    val (id, fused, _) = candidate
+                    val photo = photos[id] ?: return@mapNotNull null
+                    SearchResult(
+                        photoId = id,
+                        uri = photo.uri,
+                        score = fused,
+                        clipSimilarity = cosineSimilarity(clipQ, clipEmbeddings[id]!!),
+                        captionEmbeddingSimilarity = cosineSimilarity(capQ, captionEmbeddings[id]!!),
+                        lexicalMatch = false
+                    )
+                }
             Log.i(TAG, "search: Gemma confirmed ${gemmaResults.size} result(s)")
             gemmaResults
         }

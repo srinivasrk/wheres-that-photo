@@ -15,10 +15,10 @@ class GemmaCaptioner(private val context: Context) {
     private val modelPath = "/data/local/tmp/llm/model.task"
 
     private val captionPrompt =
-        "Describe this image in 2-3 short sentences. " +
-            "Include the main subject, setting, and mood. " +
-            "Mention visible people, animals, or objects. " +
-            "Do not guess at identities."
+        "Look carefully at this specific image and describe only what you can actually see in it. " +
+            "Write 2-3 sentences covering the main subject, setting, and mood. " +
+            "Mention visible people, animals, or objects with accurate detail. " +
+            "Do not guess, infer, or describe anything not visible in the image."
 
     // Gemma 3n E4B is ~3 GB. Build the LlmInference once on first caption() call
     // and reuse it for every photo. Rebuilding per image would add minutes of
@@ -48,44 +48,72 @@ class GemmaCaptioner(private val context: Context) {
     }
 
     /**
-     * Ask Gemma (text-only, no image) whether [caption] is relevant to [query].
-     * Used as a semantic reranker when embedding-based search returns no results —
-     * Gemma understands synonym relationships (e.g. "god" ↔ "deity") that vector
-     * similarity alone misses.
-     * Returns true if Gemma responds with "yes", false otherwise.
+     * Ask Gemma (text-only, one call) which of the [captions] are relevant to [query].
+     * All captions are batched into a single prompt so we pay model-load cost only once.
+     * Returns a list of booleans parallel to [captions].
      */
-    fun judgeRelevance(query: String, caption: String): Boolean {
+    fun judgeRelevanceBatch(query: String, captions: List<String>): List<Boolean> {
+        if (captions.isEmpty()) return emptyList()
         if (validateModelPath().isFailure) {
-            Log.w(TAG, "judgeRelevance: model unavailable, skipping")
-            return false
+            Log.w(TAG, "judgeRelevanceBatch: model unavailable, returning all false")
+            return List(captions.size) { false }
         }
-        val prompt =
-            "Search query: \"$query\"\n" +
-            "Image caption: \"$caption\"\n\n" +
-            "Is the image described by the caption relevant to the search query? " +
-            "Consider synonyms and closely related concepts " +
-            "(for example, 'deity' is relevant to 'god', 'canine' to 'dog'). " +
-            "Reply with only the single word yes or no."
 
-        Log.d(TAG, "judgeRelevance: query=\"$query\" caption=\"${caption.take(80)}…\"")
+        // Build a numbered list so Gemma can answer per-item in one shot.
+        val numberedCaptions = captions.mapIndexed { i, cap ->
+            "${i + 1}. \"$cap\""
+        }.joinToString("\n")
+
+        val prompt =
+            "You are a search relevance judge. " +
+            "For each numbered image caption below, decide if it is relevant to the search query. " +
+            "Consider synonyms and related concepts (e.g. 'deity' is relevant to 'god', 'canine' to 'dog').\n\n" +
+            "Search query: \"$query\"\n\n" +
+            "Captions:\n$numberedCaptions\n\n" +
+            "Reply with exactly one line per caption in this format (no other text):\n" +
+            "1: yes\n2: no\n3: yes\n..."
+
+        Log.d(TAG, "judgeRelevanceBatch: query=\"$query\" captions=${captions.size}")
+        Log.v(TAG, "judgeRelevanceBatch prompt:\n$prompt")
 
         val session = LlmInferenceSession.createFromOptions(
             llm,
             LlmInferenceSession.LlmInferenceSessionOptions.builder()
                 .setGraphOptions(GraphOptions.builder().setEnableVisionModality(false).build())
-                .setTopK(1)          // deterministic
+                .setTopK(1)
                 .setTemperature(0.1f)
                 .build()
         )
         return try {
             session.addQueryChunk(prompt)
-            val response = session.generateResponse().trim().lowercase()
-            val relevant = response.startsWith("yes")
-            Log.i(TAG, "judgeRelevance: response=\"$response\" → relevant=$relevant")
-            relevant
+            val response = session.generateResponse().trim()
+            Log.i(TAG, "judgeRelevanceBatch response:\n$response")
+            parseRelevanceResponse(response, captions.size)
         } finally {
             session.close()
         }
+    }
+
+    /**
+     * Parse Gemma's numbered yes/no response into a boolean list.
+     * Expected format per line: "N: yes" or "N: no" (case-insensitive).
+     * Falls back to false for any line that can't be parsed.
+     */
+    private fun parseRelevanceResponse(response: String, count: Int): List<Boolean> {
+        val results = MutableList(count) { false }
+        response.lines().forEach { line ->
+            val clean = line.trim().lowercase()
+            // Match "1: yes", "2: no", "1 yes", "1-yes" etc.
+            val match = Regex("""^(\d+)\s*[:\-]\s*(yes|no)""").find(clean)
+            if (match != null) {
+                val index = match.groupValues[1].toIntOrNull()?.minus(1) ?: return@forEach
+                if (index in results.indices) {
+                    results[index] = match.groupValues[2] == "yes"
+                }
+            }
+        }
+        Log.d(TAG, "judgeRelevanceBatch parsed: $results")
+        return results
     }
 
     fun caption(bitmap: Bitmap): String {
@@ -94,8 +122,9 @@ class GemmaCaptioner(private val context: Context) {
             return "Model unavailable: ${check.exceptionOrNull()?.message}"
         }
 
-        // Fresh session per image — cheap, and avoids prompt or image context
-        // from the previous photo bleeding into the next caption.
+        // Vision session for this image.
+        // Temperature lowered to 0.3 — captioning is a factual task, not creative writing.
+        // Lower temperature reduces hallucination while keeping natural phrasing.
         val session = LlmInferenceSession.createFromOptions(
             llm,
             LlmInferenceSession.LlmInferenceSessionOptions.builder()
@@ -104,17 +133,43 @@ class GemmaCaptioner(private val context: Context) {
                         .setEnableVisionModality(true)
                         .build()
                 )
-                .setTopK(40)
-                .setTemperature(0.8f)
+                .setTopK(20)
+                .setTemperature(0.3f)
                 .build()
         )
 
-        return try {
+        val caption = try {
             session.addImage(BitmapImageBuilder(bitmap).build())
             session.addQueryChunk(captionPrompt)
             session.generateResponse().trim()
         } finally {
             session.close()
         }
+
+        // Flush: open a cheap text-only session immediately after the vision session
+        // closes. MediaPipe's LlmInference engine has been observed retaining image
+        // state across sessions; this blank round-trip forces the internal image buffer
+        // to be cleared before the next photo is captioned.
+        try {
+            val flushSession = LlmInferenceSession.createFromOptions(
+                llm,
+                LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                    .setGraphOptions(GraphOptions.builder().setEnableVisionModality(false).build())
+                    .setTopK(1)
+                    .setTemperature(0.1f)
+                    .build()
+            )
+            try {
+                flushSession.addQueryChunk(".")
+                flushSession.generateResponse()
+            } finally {
+                flushSession.close()
+            }
+            Log.d(TAG, "caption: flush session complete")
+        } catch (e: Exception) {
+            Log.w(TAG, "caption: flush session failed (non-fatal): ${e.message}")
+        }
+
+        return caption
     }
 }

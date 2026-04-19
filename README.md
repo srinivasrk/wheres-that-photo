@@ -1,10 +1,16 @@
-# Where's That Photo
+# 📷 Where's That Photo
 
 **On-device natural-language search for your photo library.**
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org/) [![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com/) [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose) [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-005CED?style=flat-square&logo=onnx&logoColor=white)](https://onnxruntime.ai/) [![MediaPipe](https://img.shields.io/badge/MediaPipe-018786?style=flat-square&logo=google&logoColor=white)](https://developers.google.com/mediapipe) [![Room](https://img.shields.io/badge/Room-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://developer.android.com/training/data-storage/room) [![License](https://img.shields.io/badge/License-TBD-lightgrey?style=flat-square)](#license)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Android](https://img.shields.io/badge/Android-12%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com/)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-005CED?style=for-the-badge&logo=onnx&logoColor=white)](https://onnxruntime.ai/)
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-018786?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
+[![Room](https://img.shields.io/badge/Room-SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://developer.android.com/training/data-storage/room)
+[![License](https://img.shields.io/badge/License-TBD-94a3b8?style=for-the-badge)](#license)
 
-[Features](#features) · [Get Started](#get-started) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing)
+[**Features**](#features) &nbsp;·&nbsp; [**Get started**](#get-started) &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Roadmap](#roadmap) &nbsp;·&nbsp; [Contributing](#contributing)
 
 ---
 
