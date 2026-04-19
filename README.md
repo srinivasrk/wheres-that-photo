@@ -56,7 +56,7 @@ Every model runs locally. Your photos stay on your phone.
 ### 1. Clone and sync
 
 ```bash
-git clone https://github.com/<your-org>/wheres-that-photo.git
+git clone https://github.com/srinivasrk/wheres-that-photo.git
 cd wheres-that-photo
 # Open in Android Studio and let Gradle sync
 ```
@@ -87,9 +87,10 @@ Copy into `app/src/main/assets/models/minilm/`.
 
 **Gemma 3n E4B** — [google/gemma-3n-E4B-it-litert-preview](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview) *(accept the license on the model card first)*
 ```bash
-hf download google/gemma-3n-E4B-it-litert-preview <filename>.task --local-dir tmp
+# List available files on the model card, then download the .task file
+hf download google/gemma-3n-E4B-it-litert-preview --local-dir tmp --include "*.task"
 adb shell mkdir -p /data/local/tmp/llm
-adb push tmp/<filename>.task /data/local/tmp/llm/model.task
+adb push tmp/gemma-3n-E4B-it-litert-preview.task /data/local/tmp/llm/model.task
 ```
 
 **Expected asset layout:**
