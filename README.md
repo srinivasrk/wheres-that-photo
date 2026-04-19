@@ -9,7 +9,7 @@
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-blue?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-TBD-94a3b8?style=flat-square)](#license)
 
-Search your photo library the way you'd describe a memory — *"the café in Paris"*, *"graduation with grandma"*, *"that sunset hike"* — with no cloud, no API key, and no photo ever leaving your device.
+Search your photo library the way you'd describe a memory — *"the café in Paris"*, *"graduation with grandma"*, *"that sunset hike"*, *"Tokyo, last October"* — with no cloud, no API key, and no photo ever leaving your device.
 
 </div>
 
@@ -22,7 +22,8 @@ Where's That Photo combines three on-device models to understand both your photo
 | Stage | Model | What it does |
 |---|---|---|
 | **Vision** | MobileCLIP (ONNX) | Embeds each photo into a 512-d semantic space |
-| **Caption** | Gemma 3n E4B (MediaPipe) | Writes a short English description of every photo |
+| **Metadata** | Android ExifInterface + Geocoder | Reads date, time, and GPS from each photo; reverse-geocodes to a place name |
+| **Caption** | Gemma 3n E4B (MediaPipe) | Writes a 2–3 sentence description grounded in the image and its EXIF metadata |
 | **Language** | MiniLM (ONNX) | Embeds captions and queries into a 384-d space for phrase-level matching |
 | **Search** | Fused scoring + Gemma reranking | CLIP and caption similarity combined; Gemma resolves synonym gaps |
 
@@ -32,11 +33,12 @@ Every model runs locally. Your photos stay on your phone.
 
 ## Features
 
-- **Natural language search** — query by scene, mood, subject, or occasion
+- **Natural language search** — query by scene, mood, subject, occasion, date, or place
+- **EXIF-aware captions** — date, time, and GPS location are read from each photo's metadata and woven into the Gemma caption, so searches like *"Rome trip"*, *"Christmas morning"*, or *"photos from 2023"* just work
 - **Synonym-aware** — searches for "deity" find photos captioned "god"; "canine" finds "dog"
 - **Two-signal ranking** — CLIP handles visual semantics; MiniLM handles phrasing; scores are fused for precision
 - **Gemma fallback reranking** — when vector similarity is ambiguous, Gemma judges caption relevance in a single batched call
-- **Fully private** — no network calls, no telemetry, all inference runs on-device
+- **Fully private** — all inference and geocoding run on-device; no photo or query leaves your phone
 
 ---
 
@@ -118,7 +120,7 @@ Grant **Photos / media** permission, then tap **Index CLIP** → **Index Caption
 | CLIP image embed | 512 floats, L2 norm ≈ 1.0 |
 | CLIP text similarity | "a dog" vs "a cat" → 0.6–0.9; same string twice → 1.0 |
 | MiniLM similarity | "commencement ceremony" vs "graduation" → > 0.7 |
-| Gemma caption | Real scene description, not generic filler |
+| Gemma caption | Real scene description including date/location if EXIF is present |
 
 ---
 
@@ -127,40 +129,44 @@ Grant **Photos / media** permission, then tap **Index CLIP** → **Index Caption
 ```
 Photos (MediaStore)
       │
-      ▼
- ┌─────────────┐     ┌──────────────────┐
- │ MobileCLIP  │     │   Gemma 3n E4B   │
- │ vision_model│     │  (MediaPipe LLM) │
- └──────┬──────┘     └────────┬─────────┘
-        │ 512-d embed         │ caption text
-        ▼                     ▼
-   Room (SQLite)    ┌─────────────────┐
-        │           │     MiniLM      │
-        │           │ (ONNX, 384-d)  │
-        │           └────────┬────────┘
-        │                    │ caption embed
-        └──────────┬─────────┘
-                   │
-              ┌────▼──────────────┐
-              │  Fused scoring    │
-              │  0.45×CLIP        │
-              │  0.55×MiniLM      │
-              │  + lexical bonus  │
-              └────┬──────────────┘
-                   │ 0 results?
-                   ▼
-          ┌─────────────────┐
-          │  Gemma reranker │  ← single batched prompt
-          │  (synonym gaps) │
-          └─────────────────┘
+      ├─────────────────────────────────────┐
+      ▼                                     ▼
+ ┌─────────────┐                  ┌──────────────────────┐
+ │ MobileCLIP  │                  │  ExifInterface       │
+ │ vision_model│                  │  + Geocoder          │
+ └──────┬──────┘                  │  date / time / place │
+        │ 512-d embed             └──────────┬───────────┘
+        ▼                                    │ metadata context
+   Room (SQLite)              ┌──────────────▼──────────┐
+        │                     │      Gemma 3n E4B        │
+        │                     │   (MediaPipe, vision)    │
+        │                     └──────────────┬───────────┘
+        │                                    │ caption text
+        │                     ┌──────────────▼───────────┐
+        │                     │          MiniLM           │
+        │                     │      (ONNX, 384-d)        │
+        │                     └──────────────┬────────────┘
+        │                                    │ caption embed
+        └─────────────────┬──────────────────┘
+                          │
+                   ┌──────▼────────────┐
+                   │  Fused scoring    │
+                   │  0.45×CLIP        │
+                   │  0.55×MiniLM      │
+                   │  + lexical bonus  │
+                   └──────┬────────────┘
+                          │ 0 results?
+                          ▼
+                 ┌─────────────────┐
+                 │  Gemma reranker │  ← single batched prompt
+                 │  (synonym gaps) │
+                 └─────────────────┘
 ```
 
 ---
 
 ## Roadmap
 
-- Per-photo indexing progress UI with live thumbnail + caption stream
-- Photo detail sheet with match breakdown (CLIP vs caption score) and re-caption
 - Background indexing via WorkManager with thermal/charging constraints
 - `sqlite-vec` for scalable ANN search on large libraries
 - Person search — face detection, on-device face embeddings, and a People tab
@@ -181,3 +187,4 @@ Source code license TBD. Model weights (Gemma, MobileCLIP, MiniLM) are governed 
 ---
 
 *Where's That Photo — find the shot, keep the memory private.*
+                                                                                                                                                       

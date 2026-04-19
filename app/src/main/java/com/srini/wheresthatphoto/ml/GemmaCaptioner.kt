@@ -7,6 +7,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.srini.wheresthatphoto.media.PhotoMetadata
 import java.io.File
 
 private const val TAG = "WTP/Gemma"
@@ -14,7 +15,11 @@ private const val TAG = "WTP/Gemma"
 class GemmaCaptioner(private val context: Context) {
     private val modelPath = "/data/local/tmp/llm/model.task"
 
-    private val captionPrompt =
+    /**
+     * Base visual description instruction appended after any metadata context.
+     * Kept separate so the metadata preamble can be injected cleanly.
+     */
+    private val captionInstruction =
         "Look carefully at this specific image and describe only what you can actually see in it. " +
             "Write 2-3 sentences covering the main subject, setting, and mood. " +
             "Mention visible people, animals, or objects with accurate detail. " +
@@ -116,11 +121,36 @@ class GemmaCaptioner(private val context: Context) {
         return results
     }
 
-    fun caption(bitmap: Bitmap): String {
+    /**
+     * Generate a caption for [bitmap].
+     *
+     * If [metadata] is provided (date, time, or location extracted from EXIF), a context
+     * sentence is prepended to the prompt so Gemma weaves those facts into the caption
+     * naturally — making captions like "A birthday party at a café in Rome on July 4, 2023"
+     * searchable by date, time, and place.
+     */
+    fun caption(bitmap: Bitmap, metadata: PhotoMetadata? = null): String {
         val check = validateModelPath()
         if (check.isFailure) {
             return "Model unavailable: ${check.exceptionOrNull()?.message}"
         }
+
+        // Build the prompt: optional metadata preamble + visual instruction.
+        val prompt = buildString {
+            if (metadata != null && metadata.hasAny) {
+                val parts = listOfNotNull(
+                    metadata.dateTaken?.let { "on $it" },
+                    metadata.timeTaken?.let { "at $it" },
+                    metadata.location?.let { "in $it" }
+                )
+                if (parts.isNotEmpty()) {
+                    append("This photo was taken ${parts.joinToString(" ")}. ")
+                    append("Include this date, time, and location naturally in your description. ")
+                }
+            }
+            append(captionInstruction)
+        }
+        Log.d(TAG, "caption: metadata=${metadata?.dateTaken} ${metadata?.timeTaken} ${metadata?.location}")
 
         // Vision session for this image.
         // Temperature lowered to 0.3 — captioning is a factual task, not creative writing.
@@ -140,7 +170,7 @@ class GemmaCaptioner(private val context: Context) {
 
         val caption = try {
             session.addImage(BitmapImageBuilder(bitmap).build())
-            session.addQueryChunk(captionPrompt)
+            session.addQueryChunk(prompt)
             session.generateResponse().trim()
         } finally {
             session.close()

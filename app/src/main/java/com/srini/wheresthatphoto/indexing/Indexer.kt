@@ -11,6 +11,7 @@ import com.srini.wheresthatphoto.data.CaptionEntity
 import com.srini.wheresthatphoto.data.ClipEmbeddingEntity
 import com.srini.wheresthatphoto.data.PhotoEntity
 import com.srini.wheresthatphoto.media.MediaStoreRepository
+import com.srini.wheresthatphoto.media.PhotoMetadataExtractor
 import com.srini.wheresthatphoto.ml.ClipEncoder
 import com.srini.wheresthatphoto.ml.GemmaCaptioner
 import com.srini.wheresthatphoto.ml.TextEncoder
@@ -27,6 +28,7 @@ class Indexer(
     private val clipEncoder: ClipEncoder,
     private val textEncoder: TextEncoder,
     private val gemmaCaptioner: GemmaCaptioner,
+    private val photoMetadataExtractor: PhotoMetadataExtractor,
     private val database: AppDatabase
 ) {
     /**
@@ -87,13 +89,15 @@ class Indexer(
         val dao = database.photoDao()
         val photos = dao.getUncaptionedPhotos()
         photos.forEach { photo ->
-            val source = ImageDecoder.createSource(contentResolver, Uri.parse(photo.uri))
+            val photoUri = Uri.parse(photo.uri)
+            val source = ImageDecoder.createSource(contentResolver, photoUri)
             val bitmap = ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
                 // HARDWARE bitmaps are GPU-only; MediaPipe and ONNX Runtime both
                 // need CPU-readable pixels, so force a software allocation.
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
-            val caption = gemmaCaptioner.caption(bitmap)
+            val metadata = photoMetadataExtractor.extract(contentResolver, photoUri)
+            val caption = gemmaCaptioner.caption(bitmap, metadata)
             val textEmbedding = textEncoder.embed(caption)
             dao.upsertCaptionBundle(
                 CaptionEntity(photo.id, caption, "gemma-3n"),
@@ -156,10 +160,12 @@ class Indexer(
                 dao.upsertClipEmbedding(ClipEmbeddingEntity(photoId, clipEmbedding))
 
                 emit(IndexProgress(current, total, uriStr, IndexPhase.Captioning, null))
+                Log.d(TAG, "[$current/$total] Extracting EXIF metadata…")
+                val metadata = photoMetadataExtractor.extract(contentResolver, uri)
                 Log.d(TAG, "[$current/$total] Running Gemma caption…")
 
                 val caption = try {
-                    gemmaCaptioner.caption(bitmap)
+                    gemmaCaptioner.caption(bitmap, metadata)
                         .also { Log.d(TAG, "[$current/$total] Caption: \"$it\"") }
                 } catch (e: Exception) {
                     Log.e(TAG, "[$current/$total] Gemma captioning failed", e)
@@ -196,11 +202,13 @@ class Indexer(
             val dao = database.photoDao()
             val photo = dao.getPhotoById(photoId)
                 ?: error("Photo not found: $photoId")
-            val source = ImageDecoder.createSource(contentResolver, Uri.parse(photo.uri))
+            val photoUri = Uri.parse(photo.uri)
+            val source = ImageDecoder.createSource(contentResolver, photoUri)
             val bitmap = ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
-            val caption = gemmaCaptioner.caption(bitmap)
+            val metadata = photoMetadataExtractor.extract(contentResolver, photoUri)
+            val caption = gemmaCaptioner.caption(bitmap, metadata)
             Log.d(TAG, "recaptionPhoto: new caption=\"$caption\"")
             val textEmbedding = textEncoder.embed(caption)
             dao.upsertCaptionBundle(

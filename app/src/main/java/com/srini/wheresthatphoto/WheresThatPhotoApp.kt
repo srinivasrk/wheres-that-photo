@@ -4,6 +4,7 @@ import android.app.Application
 import com.srini.wheresthatphoto.data.AppDatabase
 import com.srini.wheresthatphoto.indexing.Indexer
 import com.srini.wheresthatphoto.media.MediaStoreRepository
+import com.srini.wheresthatphoto.media.PhotoMetadataExtractor
 import com.srini.wheresthatphoto.ml.ClipEncoder
 import com.srini.wheresthatphoto.ml.GemmaCaptioner
 import com.srini.wheresthatphoto.ml.TextEncoder
@@ -25,12 +26,14 @@ class AppContainer(app: Application) {
     private val clipEncoder = ClipEncoder(app)
     private val textEncoder = TextEncoder(app)
     private val gemmaCaptioner = GemmaCaptioner(app)
+    private val photoMetadataExtractor = PhotoMetadataExtractor(app)
 
     val indexer: Indexer = Indexer(
         mediaStoreRepository = mediaStoreRepository,
         clipEncoder = clipEncoder,
         textEncoder = textEncoder,
         gemmaCaptioner = gemmaCaptioner,
+        photoMetadataExtractor = photoMetadataExtractor,
         database = database
     )
 
