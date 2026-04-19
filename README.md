@@ -1,23 +1,10 @@
-
-
-
-
 # Where's That Photo
 
 **On-device natural-language search for your photo library.**
 
-[Kotlin](https://kotlinlang.org/)
-[Android](https://developer.android.com/)
-[Compose](https://developer.android.com/jetpack/compose)
-[ONNX Runtime](https://onnxruntime.ai/)
-[MediaPipe](https://developers.google.com/mediapipe)
-
-[Room](https://developer.android.com/training/data-storage/room)
-[License](#license)
+[![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org/) [![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com/) [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose) [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-005CED?style=flat-square&logo=onnx&logoColor=white)](https://onnxruntime.ai/) [![MediaPipe](https://img.shields.io/badge/MediaPipe-018786?style=flat-square&logo=google&logoColor=white)](https://developers.google.com/mediapipe) [![Room](https://img.shields.io/badge/Room-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://developer.android.com/training/data-storage/room) [![License](https://img.shields.io/badge/License-TBD-lightgrey?style=flat-square)](#license)
 
 [Features](#features) · [Get Started](#get-started) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Contributing](#contributing)
-
-
 
 ---
 
@@ -189,6 +176,7 @@ Schema, RRF detail, and future **sqlite-vec** notes: **[project_plan.md](project
 | **Next**       | **UI polish** — compact header + primary/secondary action card, a dismissible permission banner, empty states for "no photos picked / no search run / no results," a photo **detail sheet** (full image + Gemma caption + match breakdown showing CLIP vs caption-embedding score + re-caption button), and a Material 3 seed color with dynamic color on Android 12+.                                                                                                                                            |
 | **Next**       | sqlite-vec or similar for large libraries; Gemma in app-internal storage with download UI.                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **Next**       | Background indexing (WorkManager) with thermal/charging constraints.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Next**       | **Dev setup script** — one command (e.g. `scripts/setup-models.ps1` / `setup-models.sh`) that installs or checks `huggingface_hub` CLI, runs all `hf download` steps from [Model setup](#model-setup) for MobileCLIP, CLIP tokenizer, and MiniLM, copies outputs into `app/src/main/assets/models/{mobileclip,minilm}/`, verifies expected filenames exist, and prints the `adb push` path for the Gemma `.task` (device-specific; optional `--push-gemma` if a device is connected). Document the script in **Get started** so a fresh clone can fetch weights without hand-copying. |
 | **Later**      | **Person-specific search** — face detection (MLKit / MediaPipe Face Detector) + on-device face embeddings (e.g. MobileFaceNet) + clustering, plus a **People** tab to name each cluster. Face matches fuse into RRF as a third ranking signal alongside CLIP and caption embeddings, so queries like *”grandma's birthday”* find your specific grandmother rather than any elderly adult. Requires a new entity (`PersonEntity`, `FaceEmbeddingEntity`), a face-indexing pass in `Indexer.kt`, and a labeling UI. |
 | **Later**      | Play Store, broader devices, optional “more like this” search.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
