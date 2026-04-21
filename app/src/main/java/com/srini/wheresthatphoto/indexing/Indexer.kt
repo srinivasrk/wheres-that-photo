@@ -162,6 +162,12 @@ class Indexer(
                 emit(IndexProgress(current, total, uriStr, IndexPhase.Captioning, null))
                 Log.d(TAG, "[$current/$total] Extracting EXIF metadata…")
                 val metadata = photoMetadataExtractor.extract(contentResolver, uri)
+                // Persist GPS as soon as it is known so map/location features can query SQLite directly.
+                dao.upsertPhoto(photo.copy(lat = metadata.lat, lng = metadata.lng))
+                Log.d(
+                    TAG,
+                    "[$current/$total] Metadata indexed: lat=${metadata.lat} lng=${metadata.lng} location=${metadata.location}"
+                )
                 Log.d(TAG, "[$current/$total] Running Gemma caption…")
 
                 val caption = try {

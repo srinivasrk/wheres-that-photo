@@ -176,6 +176,7 @@ class SearchRepository(
             "withClip=${clipIds.size} withCaptionEmb=${captionEmbIds.size}")
         val summaries = allPhotos
             .filter { it.id in clipIds && it.id in captionEmbIds }
+            .sortedByDescending { photo -> photo.captionedAt ?: photo.indexedAt ?: 0L }
             .map { p ->
                 IndexedPhotoSummary(
                     photoId = p.id,

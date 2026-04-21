@@ -34,11 +34,29 @@ Every model runs locally. Your photos stay on your phone.
 ## Features
 
 - **Natural language search** — query by scene, mood, subject, occasion, date, or place
-- **EXIF-aware captions** — date, time, and GPS location are read from each photo's metadata and woven into the Gemma caption, so searches like *"Rome trip"*, *"Christmas morning"*, or *"photos from 2023"* just work
+- **New app shell UI** — bottom navigation with dedicated `Gallery`, `People`, and `Search` experiences
+- **Gallery home feed** — recency-grouped layout (`Today`, `Yesterday`, `This Week`, `This Month`, `Earlier`) with dynamic counts
+- **Upload-to-index flow** — selecting photos from Upload immediately starts on-device indexing
+- **Live indexing indicator** — compact progress card with thumbnail, current file name, and progress bar
+- **People & Pets view** — clustered-style circular identity cards (known + unknown placeholders) in a dedicated screen
+- **Search workspace** — query composer, filter chips, recent searches, and prompt suggestions in one screen
+- **EXIF + geolocation aware** — date/time and GPS metadata are extracted; valid coordinates are persisted to SQLite and reverse-geocoded into caption context, enabling queries like *"Seattle pictures"*
 - **Synonym-aware** — searches for "deity" find photos captioned "god"; "canine" finds "dog"
 - **Two-signal ranking** — CLIP handles visual semantics; MiniLM handles phrasing; scores are fused for precision
 - **Gemma fallback reranking** — when vector similarity is ambiguous, Gemma judges caption relevance in a single batched call
 - **Fully private** — all inference and geocoding run on-device; no photo or query leaves your phone
+
+---
+
+## Screenshots
+
+| Gallery | Gallery (while indexing) |
+|---|---|
+| ![Gallery home](screenshots/HomePage.png) | ![Gallery upload and indexing](screenshots/HomePage-Upload.png) |
+
+| People & Pets | Search | Settings |
+|---|---|---|
+| ![People and pets](screenshots/People%26Pets.png) | ![Search screen](screenshots/Search.png) | ![Settings screen](screenshots/Settings.png) |
 
 ---
 
@@ -112,7 +130,7 @@ app/src/main/assets/models/
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Grant **Photos / media** permission, then tap **Index CLIP** → **Index Captions** → **Search**.
+Grant **Photos / media** permission, open **Gallery**, tap **Upload**, and pick photos. Indexing starts automatically (with an inline progress card), then use the **Search** tab to run natural-language queries.
 
 ### Verify your setup
 
@@ -170,7 +188,7 @@ Photos (MediaStore)
 
 - Background indexing via WorkManager with thermal/charging constraints
 - `sqlite-vec` for scalable ANN search on large libraries
-- Person search — face detection, on-device face embeddings, and a People tab
+- Person search improvements — real face detection + on-device face embeddings powering named identities in People
 - One-command model setup script (`scripts/setup-models.sh`)
 
 ---

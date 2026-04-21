@@ -54,6 +54,9 @@ dependencies {
     androidTestImplementation(bom)
 
     implementation("androidx.core:core-ktx:1.15.0")
+    // AndroidX ExifInterface — better-maintained than the framework class and
+    // handles non-seekable content:// streams more reliably.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.ui:ui")

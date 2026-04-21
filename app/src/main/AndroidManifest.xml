@@ -2,10 +2,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!--
+      Required so that ContentResolver streams of media URIs include EXIF GPS
+      tags. Without this (combined with MediaStore.setRequireOriginal at the
+      call site), the system redacts latitude/longitude from the bytes we read
+      and ExifInterface.getLatLong returns false. See PhotoMetadataExtractor.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 
     <application
         android:name=".WheresThatPhotoApp"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.WheresThatPhoto">

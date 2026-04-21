@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
+// ── Seed palettes — match the design file's Material 3 tokens ───────────────
+// Exact values from `Where's that Photo.html` :root / [data-theme="dark"].
+
 private val SeedLight = lightColorScheme(
     primary = Color(0xFF1B6B93),
     onPrimary = Color.White,
@@ -33,9 +36,12 @@ private val SeedLight = lightColorScheme(
     onSurface = Color(0xFF1A1C1E),
     surfaceVariant = Color(0xFFE1E4E9),
     onSurfaceVariant = Color(0xFF42474E),
+    surfaceContainerHigh = Color(0xFFE3E8EE),
     outline = Color(0xFF73777F),
     error = Color(0xFFBA1A1A),
-    onError = Color.White
+    onError = Color.White,
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002)
 )
 
 private val SeedDark = darkColorScheme(
@@ -57,17 +63,40 @@ private val SeedDark = darkColorScheme(
     onSurface = Color(0xFFE2E2E6),
     surfaceVariant = Color(0xFF42474E),
     onSurfaceVariant = Color(0xFFC2C7CF),
+    surfaceContainerHigh = Color(0xFF2A2F36),
     outline = Color(0xFF8C9199),
     error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005)
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFB4AB)
 )
 
+/**
+ * Resolve whether dark colors should apply given the user's [ThemeMode]
+ * override and the OS-reported dark-mode state.
+ */
+@Composable
+private fun shouldUseDarkTheme(mode: ThemeMode): Boolean = when (mode) {
+    ThemeMode.System -> isSystemInDarkTheme()
+    ThemeMode.Light -> false
+    ThemeMode.Dark -> true
+}
+
+/**
+ * App theme.
+ *
+ * - [themeMode]: the user's override; defaults to [ThemeMode.System].
+ * - [dynamicColor]: Material You wallpaper-based theming. Disabled by
+ *   default so the designed seed palette ships consistently on every
+ *   device. Toggle it on only if you specifically want wallpaper colors.
+ */
 @Composable
 fun WheresThatPhotoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    themeMode: ThemeMode = ThemeMode.System,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = shouldUseDarkTheme(themeMode)
     val context = LocalContext.current
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {

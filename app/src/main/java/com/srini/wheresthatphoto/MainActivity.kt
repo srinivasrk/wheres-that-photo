@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import com.srini.wheresthatphoto.indexing.IndexProgress
 import com.srini.wheresthatphoto.ui.AppScreen
 import com.srini.wheresthatphoto.ui.theme.WheresThatPhotoTheme
+import com.srini.wheresthatphoto.ui.theme.rememberThemeController
 import kotlinx.coroutines.launch
 
 private const val TAG = "WTP/Main"
@@ -31,9 +32,19 @@ class MainActivity : ComponentActivity() {
     private var indexProgress by mutableStateOf<IndexProgress?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        // READ_MEDIA_IMAGES is the one that gates the app's core functionality;
+        // the hasPermission flag drives UI. ACCESS_MEDIA_LOCATION is optional —
+        // if the user denies it, indexing still works but EXIF GPS will be
+        // redacted and photos will show no location. See PhotoMetadataExtractor.
+        hasPermission = grants[Manifest.permission.READ_MEDIA_IMAGES] == true
+        val locationGranted = grants[Manifest.permission.ACCESS_MEDIA_LOCATION] == true
+        Log.d(
+            TAG,
+            "Permission result: READ_MEDIA_IMAGES=$hasPermission " +
+                "ACCESS_MEDIA_LOCATION=$locationGranted"
+        )
     }
 
     private val pickPhotosLauncher = registerForActivityResult(
@@ -59,19 +70,30 @@ class MainActivity : ComponentActivity() {
             "No photos selected."
         } else {
             Log.d(TAG, "${selectedUris.size} photo(s) selected (capped at $PocMaxPhotos)")
-            "${selectedUris.size} photo(s) selected. Tap Index & caption."
+            "${selectedUris.size} photo(s) selected. Starting indexing…"
+        }
+        if (selectedUris.isNotEmpty()) {
+            startIndexingSelectedUris()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES)
+        requestPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.ACCESS_MEDIA_LOCATION
+            )
+        )
 
         setContent {
             var permissionBannerDismissed by rememberSaveable { mutableStateOf(false) }
-            WheresThatPhotoTheme {
+            val themeController = rememberThemeController()
+            WheresThatPhotoTheme(themeMode = themeController.mode) {
                 AppScreen(
+                    themeMode = themeController.mode,
+                    onToggleTheme = { systemIsDark -> themeController.toggle(systemIsDark) },
                     hasPermission = hasPermission,
                     permissionBannerDismissed = permissionBannerDismissed,
                     onDismissPermissionBanner = { permissionBannerDismissed = true },
@@ -80,34 +102,14 @@ class MainActivity : ComponentActivity() {
                     indexing = indexing,
                     indexProgress = indexProgress,
                     onPickPhotos = {
+                        statusMessage = "Upload and on-device indexing may take a while for large photos."
                         pickPhotosLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
                     },
                     onIndexPoc = {
                         if (selectedUris.isNotEmpty()) {
-                            lifecycleScope.launch {
-                                Log.i(TAG, "Starting indexing for ${selectedUris.size} photo(s)")
-                                indexing = true
-                                indexProgress = null
-                                statusMessage = "Indexing ${selectedUris.size} photo(s)…"
-                                try {
-                                    appContainer.indexer
-                                        .indexPickedPhotosFlow(contentResolver, selectedUris)
-                                        .collect { progress -> indexProgress = progress }
-                                    val readyCount = appContainer.searchRepository
-                                        .getIndexedPhotoSummaries().size
-                                    Log.i(TAG, "Indexing complete — $readyCount photo(s) fully ready in DB")
-                                    statusMessage =
-                                        "Done: $readyCount photo(s) fully indexed with MobileCLIP + captions. You can search now."
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Indexing failed", e)
-                                    statusMessage = e.message ?: "Indexing failed."
-                                } finally {
-                                    indexing = false
-                                    indexProgress = null
-                                }
-                            }
+                            startIndexingSelectedUris()
                         }
                     },
                     onClearAll = {
@@ -134,5 +136,31 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val PocMaxPhotos = 50
+    }
+
+    private fun startIndexingSelectedUris() {
+        if (selectedUris.isEmpty() || indexing) return
+        lifecycleScope.launch {
+            Log.i(TAG, "Starting indexing for ${selectedUris.size} photo(s)")
+            indexing = true
+            indexProgress = null
+            statusMessage = "Indexing ${selectedUris.size} photo(s)…"
+            try {
+                appContainer.indexer
+                    .indexPickedPhotosFlow(contentResolver, selectedUris)
+                    .collect { progress -> indexProgress = progress }
+                val readyCount = appContainer.searchRepository
+                    .getIndexedPhotoSummaries().size
+                Log.i(TAG, "Indexing complete — $readyCount photo(s) fully ready in DB")
+                statusMessage =
+                    "Done: $readyCount photo(s) fully indexed with MobileCLIP + captions. You can search now."
+            } catch (e: Exception) {
+                Log.e(TAG, "Indexing failed", e)
+                statusMessage = e.message ?: "Indexing failed."
+            } finally {
+                indexing = false
+                indexProgress = null
+            }
+        }
     }
 }

@@ -1,16 +1,11 @@
 package com.srini.wheresthatphoto.ui
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import android.util.Log
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,73 +17,102 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WbTwilight
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.NorthWest
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import android.util.Log
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.srini.wheresthatphoto.indexing.IndexPhase
 import com.srini.wheresthatphoto.indexing.IndexProgress
 import com.srini.wheresthatphoto.search.IndexedPhotoSummary
 import com.srini.wheresthatphoto.search.SearchResult
-import kotlinx.coroutines.async
+import com.srini.wheresthatphoto.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import kotlin.math.max
 
 private const val TAG = "WTP/UI"
 
-private const val PocMaxPhotos = 50
+private enum class HomeTab { Gallery, People, Search, Settings }
+
+private data class GalleryBucket(
+    val title: String,
+    val photos: List<IndexedPhotoSummary>
+)
 
 private sealed class DetailTarget {
     data class FromSearch(val result: SearchResult) : DetailTarget()
@@ -98,6 +122,8 @@ private sealed class DetailTarget {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(
+    themeMode: ThemeMode,
+    onToggleTheme: (systemIsDark: Boolean) -> Unit,
     hasPermission: Boolean,
     permissionBannerDismissed: Boolean,
     onDismissPermissionBanner: () -> Unit,
@@ -113,243 +139,97 @@ fun AppScreen(
     onRecaption: suspend (String) -> String,
     onLoadIndexedPhotos: suspend () -> List<IndexedPhotoSummary>
 ) {
-    var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf(emptyList<SearchResult>()) }
-    var hasSearched by remember { mutableStateOf(false) }
-    var searching by remember { mutableStateOf(false) }
-    var detailTarget by remember { mutableStateOf<DetailTarget?>(null) }
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var activeTab by rememberSaveable { mutableStateOf(HomeTab.Gallery) }
     var indexedPhotos by remember { mutableStateOf<List<IndexedPhotoSummary>>(emptyList()) }
-    var libraryLoading by remember { mutableStateOf(false) }
+    var loadingPhotos by remember { mutableStateOf(false) }
+    var detailTarget by remember { mutableStateOf<DetailTarget?>(null) }
+    var displayStatus by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var hasSearched by remember { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf(emptyList<SearchResult>()) }
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    LaunchedEffect(selectedTab, indexing) {
-        if (selectedTab == 1) {
-            libraryLoading = true
-            try {
-                indexedPhotos = onLoadIndexedPhotos()
-            } finally {
-                libraryLoading = false
-            }
+    LaunchedEffect(Unit, indexing) {
+        loadingPhotos = true
+        try {
+            indexedPhotos = onLoadIndexedPhotos()
+        } finally {
+            loadingPhotos = false
+        }
+    }
+    LaunchedEffect(statusMessage) {
+        if (statusMessage.isBlank()) {
+            displayStatus = ""
+        } else {
+            displayStatus = statusMessage
+            delay(6000)
+            displayStatus = ""
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        GradientHeader()
-
-        if (!hasPermission && !permissionBannerDismissed) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        modifier = Modifier.weight(1f),
-                        text = "READ_MEDIA_IMAGES not granted. Optional for the system picker on many devices.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    TextButton(onClick = onDismissPermissionBanner) {
-                        Text("Dismiss")
-                    }
-                }
-            }
-        }
-
-        PrimaryTabRow(selectedTabIndex = selectedTab) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { Text("Search") },
-                icon = {
-                    Icon(
-                        Icons.Filled.Search,
-                        contentDescription = null
-                    )
-                }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { Text("Library") },
-                icon = {
-                    Icon(
-                        Icons.Filled.PhotoLibrary,
-                        contentDescription = null
-                    )
-                }
-            )
-        }
-
-        if (indexing && indexProgress != null) {
-            val p = indexProgress
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Indexing ${p.current} of ${p.total}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    LinearProgressIndicator(
-                        progress = { p.current.toFloat() / p.total.toFloat() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        val ctx = LocalContext.current
-                        AsyncImage(
-                            model = ImageRequest.Builder(ctx)
-                                .data(p.currentUri)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = null,
-                            onError = { err ->
-                                Log.e(TAG, "Progress thumb load failed uri=${p.currentUri}: ${err.result.throwable}")
-                            },
-                            modifier = Modifier
-                                .width(72.dp)
-                                .height(72.dp)
-                                .clip(RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = when (p.phase) {
-                                    IndexPhase.Embedding -> "Computing image embedding…"
-                                    IndexPhase.Captioning ->
-                                        if (p.captionText == null) {
-                                            "Generating caption…"
-                                        } else {
-                                            "Caption ready"
-                                        }
-                                },
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = p.captionText ?: "—",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        } else if (indexing) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Starting indexing…",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        color = MaterialTheme.colorScheme.secondary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                }
-            }
-        }
-
-        AnimatedContent(
-            targetState = selectedTab,
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = true),
-            transitionSpec = {
-                val enter = fadeIn(animationSpec = tween(220)) +
-                    slideInHorizontally(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it / 10 }
-                val exit = fadeOut(animationSpec = tween(180)) +
-                    slideOutHorizontally(animationSpec = tween(200)) { -it / 12 }
-                enter togetherWith exit
-            },
-            label = "tabContent"
-        ) { tab ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (tab) {
-                    0 -> SearchTabContent(
-                        modifier = Modifier.fillMaxSize(),
-                        selectedPhotoCount = selectedPhotoCount,
+                .fillMaxSize()
+                .widthIn(max = 430.dp)
+                .align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            TopAppHeader(themeMode = themeMode, onToggleTheme = onToggleTheme)
+            Spacer(Modifier.height(12.dp))
+
+            if (!hasPermission && !permissionBannerDismissed) {
+                PermissionBanner(onDismissPermissionBanner)
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Box(modifier = Modifier.weight(1f, fill = true)) {
+                when (activeTab) {
+                    HomeTab.Gallery -> GalleryScreen(
+                        photos = indexedPhotos,
+                        loading = loadingPhotos,
                         indexing = indexing,
-                        searching = searching,
-                        onPickPhotos = onPickPhotos,
-                        onIndexPoc = onIndexPoc,
-                        onClearAll = onClearAll,
+                        indexProgress = indexProgress,
+                        onPhotoClick = { detailTarget = DetailTarget.FromLibrary(it) },
+                        onPickPhotos = onPickPhotos
+                    )
+                    HomeTab.People -> PeoplePetsScreen(photos = indexedPhotos)
+                    HomeTab.Search -> SearchScreen(
                         query = query,
                         onQueryChange = { query = it },
-                        onSearch = {
-                            scope.launch {
-                                searching = true
-                                results = emptyList()
-                                // Run the actual search and a 500 ms minimum delay in parallel,
-                                // so the loading state is always visible long enough to register.
-                                val searchDeferred = async { onSearch(query) }
-                                delay(500)
-                                results = searchDeferred.await()
-                                hasSearched = true
-                                searching = false
-                            }
-                        },
+                        searching = searching,
                         hasSearched = hasSearched,
-                        results = results,
-                        onResultClick = { detailTarget = DetailTarget.FromSearch(it) }
+                        results = searchResults,
+                        onResultClick = { detailTarget = DetailTarget.FromSearch(it) },
+                        onSearch = {
+                            if (query.isNotBlank()) {
+                                scope.launch {
+                                    searching = true
+                                    searchResults = onSearch(query)
+                                    hasSearched = true
+                                    searching = false
+                                }
+                            }
+                        }
                     )
-                    1 -> LibraryTabContent(
-                        modifier = Modifier.fillMaxSize(),
-                        photos = indexedPhotos,
-                        loading = libraryLoading,
-                        onPhotoClick = { detailTarget = DetailTarget.FromLibrary(it) }
-                    )
+                    HomeTab.Settings -> PlaceholderSettings()
                 }
             }
-        }
 
-        if (statusMessage.isNotBlank()) {
             Text(
-                text = statusMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary
+                text = displayStatus,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 20.dp)
+                    .padding(top = 6.dp, bottom = 4.dp)
             )
+
+            BottomNav(activeTab = activeTab, onSelect = { activeTab = it })
         }
     }
 
@@ -360,252 +240,129 @@ fun AppScreen(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             when (target) {
-                is DetailTarget.FromSearch ->
-                    PhotoDetailSheetContent(
-                        searchResult = target.result,
-                        photoId = target.result.photoId,
-                        uri = target.result.uri,
-                        onDismiss = { detailTarget = null },
-                        onGetCaption = onGetCaption,
-                        onRecaption = onRecaption
-                    )
-                is DetailTarget.FromLibrary ->
-                    PhotoDetailSheetContent(
-                        searchResult = null,
-                        photoId = target.photo.photoId,
-                        uri = target.photo.uri,
-                        onDismiss = { detailTarget = null },
-                        onGetCaption = onGetCaption,
-                        onRecaption = onRecaption
-                    )
-            }
-        }
-    }
-}
-
-@Composable
-private fun GradientHeader() {
-    val scheme = MaterialTheme.colorScheme
-    val brush = Brush.horizontalGradient(
-        colors = listOf(
-            scheme.primaryContainer,
-            scheme.tertiaryContainer,
-            scheme.secondaryContainer
-        )
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(brush)
-            .padding(horizontal = 20.dp, vertical = 18.dp)
-    ) {
-        Text(
-            text = "Where's That Photo",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = scheme.onPrimaryContainer
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "On-device search with MobileCLIP, Gemma captions, and MiniLM.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = scheme.onPrimaryContainer.copy(alpha = 0.92f)
-        )
-    }
-}
-
-@Composable
-private fun SearchTabContent(
-    modifier: Modifier = Modifier,
-    selectedPhotoCount: Int,
-    indexing: Boolean,
-    searching: Boolean,
-    onPickPhotos: () -> Unit,
-    onIndexPoc: () -> Unit,
-    onClearAll: () -> Unit,
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    hasSearched: Boolean,
-    results: List<SearchResult>,
-    onResultClick: (SearchResult) -> Unit
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .imePadding(),  // Shift content up when the soft keyboard appears
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Pick up to $PocMaxPhotos photos. Each gets a CLIP embedding, a Gemma caption, and a caption embedding. Indexing adds or updates the selection only.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                is DetailTarget.FromSearch -> PhotoDetailSheetContent(
+                    searchResult = target.result,
+                    photoId = target.result.photoId,
+                    uri = target.result.uri,
+                    onDismiss = { detailTarget = null },
+                    onGetCaption = onGetCaption,
+                    onRecaption = onRecaption
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onPickPhotos,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("Pick photos")
-                    }
-                    Button(
-                        onClick = onIndexPoc,
-                        modifier = Modifier.weight(1f),
-                        enabled = selectedPhotoCount > 0 && !indexing,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Text("Index & caption")
-                    }
-                }
-                if (selectedPhotoCount > 0) {
-                    Text(
-                        text = "$selectedPhotoCount selected (cap $PocMaxPhotos).",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-                TextButton(
-                    onClick = onClearAll,
-                    enabled = !indexing,
-                    modifier = Modifier.align(Alignment.End),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Clear all indexed data")
-                }
+                is DetailTarget.FromLibrary -> PhotoDetailSheetContent(
+                    searchResult = null,
+                    photoId = target.photo.photoId,
+                    uri = target.photo.uri,
+                    onDismiss = { detailTarget = null },
+                    onGetCaption = onGetCaption,
+                    onRecaption = onRecaption
+                )
             }
         }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            label = { Text("Search indexed photos") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                focusedLabelColor = MaterialTheme.colorScheme.primary
-            )
-        )
-        Button(
-            onClick = onSearch,
-            enabled = query.isNotBlank() && !indexing && !searching,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.tertiary,
-                contentColor = MaterialTheme.colorScheme.onTertiary
-            )
-        ) {
-            Text(if (searching) "Searching…" else "Search")
-        }
-
-        ResultsSection(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = true),
-            hasSearched = hasSearched,
-            searching = searching,
-            query = query,
-            selectedPhotoCount = selectedPhotoCount,
-            indexing = indexing,
-            results = results,
-            onResultClick = onResultClick
-        )
     }
 }
 
 @Composable
-private fun LibraryTabContent(
-    modifier: Modifier = Modifier,
+private fun TopAppHeader(themeMode: ThemeMode, onToggleTheme: (Boolean) -> Unit) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircleIcon(Icons.Filled.Tune, null)
+            Text(
+                "Where's That Photo",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            )
+            ThemeToggleButton(themeMode = themeMode, onToggle = onToggleTheme)
+        }
+    }
+}
+
+@Composable
+private fun PermissionBanner(onDismiss: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.Info, null, modifier = Modifier.size(18.dp))
+            Text(
+                "READ_MEDIA_IMAGES not granted. Optional for many devices.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp)
+            )
+            TextButton(onClick = onDismiss) { Text("Dismiss") }
+        }
+    }
+}
+
+@Composable
+private fun GalleryScreen(
     photos: List<IndexedPhotoSummary>,
     loading: Boolean,
-    onPhotoClick: (IndexedPhotoSummary) -> Unit
+    indexing: Boolean,
+    indexProgress: IndexProgress?,
+    onPhotoClick: (IndexedPhotoSummary) -> Unit,
+    onPickPhotos: () -> Unit
 ) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+    if (loading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "Indexed in your library",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = if (photos.isEmpty() && !loading) {
-                "No photos indexed yet. Use Search → pick photos → Index & caption."
-            } else {
-                "${photos.size} photo${if (photos.size == 1) "" else "s"} with embeddings stored on-device."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        when {
-            loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SearchPill(
+                    placeholder = "Try \"sunset at the beach\"",
+                    onClick = {},
+                    modifier = Modifier.weight(1f)
+                )
+                UploadButton(onPickPhotos = onPickPhotos)
             }
-            photos.isEmpty() -> {
-                EmptyStateMessage(
-                    text = "Your indexed photos will appear here.",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 160.dp)
+        }
+        if (indexing) {
+            item { IndexingBanner(indexProgress) }
+        }
+
+        val buckets = groupPhotosByRecency(photos)
+        if (buckets.isEmpty()) {
+            item {
+                Text(
+                    "No indexed photos yet. Tap Upload to add photos.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            else -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = true),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(photos, key = { it.photoId }) { photo ->
-                        val ctx = LocalContext.current
-                        AsyncImage(
-                            model = ImageRequest.Builder(ctx)
-                                .data(photo.uri)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = photo.photoId,
-                            onError = { err ->
-                                Log.e(TAG, "Library grid load failed photoId=${photo.photoId} uri=${photo.uri}: ${err.result.throwable}")
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onPhotoClick(photo) },
-                            contentScale = ContentScale.Crop
-                        )
+        } else {
+            items(buckets) { bucket ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(
+                        title = bucket.title,
+                        count = "${bucket.photos.size} photo${if (bucket.photos.size == 1) "" else "s"}"
+                    )
+                    bucket.photos.chunked(4).forEach { chunk ->
+                        MosaicRow(chunk, onPhotoClick)
                     }
                 }
             }
@@ -614,102 +371,502 @@ private fun LibraryTabContent(
 }
 
 @Composable
-private fun ResultsSection(
-    modifier: Modifier = Modifier,
-    hasSearched: Boolean,
-    searching: Boolean,
-    query: String,
-    selectedPhotoCount: Int,
-    indexing: Boolean,
-    results: List<SearchResult>,
-    onResultClick: (SearchResult) -> Unit
+private fun SearchPill(
+    placeholder: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier.fillMaxSize()
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier
+            .clickable(onClick = onClick)
     ) {
-        Text(
-            text = "Results",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 8.dp)
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                placeholder,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun UploadButton(onPickPhotos: () -> Unit) {
+    Button(
+        onClick = onPickPhotos,
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
         )
-        when {
-            searching -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = true),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.tertiary)
+    ) {
+        Icon(Icons.Filled.ImageSearch, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Upload", fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String, count: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        Text(count, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun MosaicRow(photos: List<IndexedPhotoSummary>, onPhotoClick: (IndexedPhotoSummary) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        val left = photos.getOrNull(0)
+        val rightTop = photos.getOrNull(1)
+        val rightBottom = photos.getOrNull(2)
+        val extra = photos.getOrNull(3)
+
+        if (left != null) MosaicImage(left, Modifier.weight(1.6f).aspectRatio(1.25f), onPhotoClick)
+        else PlaceholderTile(Modifier.weight(1.6f).aspectRatio(1.25f))
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (rightTop != null) MosaicImage(rightTop, Modifier.aspectRatio(1.25f), onPhotoClick)
+            else PlaceholderTile(Modifier.aspectRatio(1.25f))
+            if (rightBottom != null) MosaicImage(rightBottom, Modifier.aspectRatio(1.25f), onPhotoClick)
+            else PlaceholderTile(Modifier.aspectRatio(1.25f))
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    val bottomPhoto = photos.getOrNull(3)
+    if (bottomPhoto != null) {
+        MosaicImage(bottomPhoto, Modifier.fillMaxWidth(0.34f).aspectRatio(1f), onPhotoClick)
+    }
+}
+
+@Composable
+private fun MosaicImage(photo: IndexedPhotoSummary, modifier: Modifier, onClick: (IndexedPhotoSummary) -> Unit) {
+    val ctx = LocalContext.current
+    AsyncImage(
+        model = ImageRequest.Builder(ctx).data(photo.uri).crossfade(true).build(),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick(photo) }
+    )
+}
+
+@Composable
+private fun PlaceholderTile(modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    )
+}
+
+@Composable
+private fun IndexingBanner(progress: IndexProgress?) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                val ctx = LocalContext.current
+                if (progress?.currentUri != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(ctx)
+                            .data(progress.currentUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PhotoLibrary,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "INDEXING ON-DEVICE",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = progress?.currentUri
+                            ?.substringAfterLast('/')
+                            ?.substringBefore('?')
+                            ?.ifBlank { "Preparing photos..." }
+                            ?: "Preparing photos...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (progress != null) {
+                        val phaseText = when (progress.phase) {
+                            IndexPhase.Embedding -> "Computing visual embedding..."
+                            IndexPhase.Captioning -> "Generating Gemma caption..."
+                        }
+                        Text(
+                            text = phaseText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
-            results.isNotEmpty() -> {
+
+            LinearProgressIndicator(
+                progress = {
+                    if (progress == null || progress.total <= 0) 0f
+                    else progress.current.toFloat() / progress.total.toFloat()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(100.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun PeoplePetsScreen(photos: List<IndexedPhotoSummary>) {
+    val people = photos.take(6)
+    val pets = photos.drop(6).take(3)
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
+        item {
+            Text("People\n& Pets", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, lineHeight = MaterialTheme.typography.displaySmall.lineHeight)
+            Text("Faces clustered on-device by the local vision model.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item { PeopleSection("People", people) }
+        item { PeopleSection("Pets", pets) }
+    }
+}
+
+@Composable
+private fun PeopleSection(label: String, photos: List<IndexedPhotoSummary>) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("$label · ${photos.size}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("View all", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        val rows = max(2, photos.chunked(3).size)
+        LazyVerticalGrid(columns = GridCells.Fixed(3), userScrollEnabled = false, modifier = Modifier.height((rows * 160).dp)) {
+            items(photos) { photo ->
+                CirclePersonCard(photo = photo, title = "Person", subtitle = "photos")
+            }
+            if (photos.size < 6) {
+                items(6 - photos.size) { CircleUnknownCard() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CirclePersonCard(photo: IndexedPhotoSummary, title: String, subtitle: String) {
+    val ctx = LocalContext.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 12.dp)) {
+        AsyncImage(
+            model = ImageRequest.Builder(ctx).data(photo.uri).crossfade(true).build(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(110.dp)
+                .clip(CircleShape)
+        )
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CircleUnknownCard() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 12.dp)) {
+        Box(
+            modifier = Modifier.size(110.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) { CircleIcon(Icons.Outlined.PersonAdd, null) }
+        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Text("Who is this?", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun SearchScreen(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    searching: Boolean,
+    hasSearched: Boolean,
+    results: List<SearchResult>,
+    onResultClick: (SearchResult) -> Unit,
+    onSearch: () -> Unit
+) {
+    val chips = listOf(
+        Triple(Icons.Filled.History, "All time", true),
+        Triple(Icons.Outlined.LocationOn, "Location", false),
+        Triple(Icons.Filled.Groups, "People", false),
+        Triple(Icons.Filled.CameraAlt, "Camera", false)
+    )
+    val recents = listOf("sunset at the beach", "mom in the garden", "golden retriever in the snow", "birthday cake", "hiking in autumn")
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().imePadding(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Search, null)
+                    androidx.compose.material3.OutlinedTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        placeholder = { Text("Describe a moment: \"Rex in the snow\"") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onSearch() })
+                    )
+                    IconButton(
+                        onClick = onSearch,
+                        enabled = query.isNotBlank() && !searching,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                chips.forEach { (icon, label, active) ->
+                    Surface(
+                        shape = RoundedCornerShape(100.dp),
+                        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(icon, null, modifier = Modifier.size(16.dp))
+                            Text(label, modifier = Modifier.padding(start = 6.dp))
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Text("RECENT SEARCHES", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        items(recents) { item ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(item, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                Icon(Icons.Outlined.NorthWest, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item {
+            ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.WbTwilight, null, tint = MaterialTheme.colorScheme.primary)
+                        Text("TRY ASKING", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
+                    }
+                    listOf(
+                        "\"Photos from my trip to Big Sur\"",
+                        "\"Everyone smiling at the camera\"",
+                        "\"Where did I photograph that blue door?\""
+                    ).forEach {
+                        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surface) {
+                            Text(it, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp))
+                        }
+                    }
+                }
+            }
+        }
+        if (searching) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+        } else if (hasSearched && results.isNotEmpty()) {
+            item { Text("Results", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            item {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = true),
+                    modifier = Modifier.height(300.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(results, key = { it.photoId }) { result ->
-                        val ctx = LocalContext.current
-                        AsyncImage(
-                            model = ImageRequest.Builder(ctx)
-                                .data(result.uri)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = result.photoId,
-                            onError = { err ->
-                                Log.e(TAG, "Search grid load failed photoId=${result.photoId} uri=${result.uri}: ${err.result.throwable}")
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onResultClick(result) },
-                            contentScale = ContentScale.Crop
-                        )
+                        SearchResultItem(result = result, onClick = { onResultClick(result) })
                     }
                 }
-            }
-            hasSearched && query.isNotBlank() -> {
-                EmptyStateMessage(
-                    text = "No photos matched your query.",
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            !hasSearched && selectedPhotoCount == 0 && !indexing -> {
-                EmptyStateMessage(
-                    text = "Pick photos, then index and search.",
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            !hasSearched -> {
-                EmptyStateMessage(
-                    text = "Enter a query and tap Search to find indexed photos.",
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }
 }
 
 @Composable
-private fun EmptyStateMessage(text: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun SearchResultItem(result: SearchResult, onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    AsyncImage(
+        model = ImageRequest.Builder(ctx).data(result.uri).crossfade(true).build(),
+        contentDescription = result.photoId,
+        onError = { err ->
+            Log.e(TAG, "Search thumb failed photoId=${result.photoId}: ${err.result.throwable}")
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        contentScale = ContentScale.Crop
+    )
+}
+
+@Composable
+private fun BottomNav(activeTab: HomeTab, onSelect: (HomeTab) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            NavItem(Icons.Filled.PhotoLibrary, "Gallery", activeTab == HomeTab.Gallery) { onSelect(HomeTab.Gallery) }
+            NavItem(Icons.Filled.Groups, "People", activeTab == HomeTab.People) { onSelect(HomeTab.People) }
+            NavItem(Icons.Filled.Search, "Search", activeTab == HomeTab.Search) { onSelect(HomeTab.Search) }
+            NavItem(Icons.Filled.Settings, "Settings", activeTab == HomeTab.Settings) { onSelect(HomeTab.Settings) }
+        }
+    }
+}
+
+@Composable
+private fun NavItem(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CircleIcon(icon: ImageVector, description: String?) {
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = description, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun PlaceholderSettings() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
+            "Settings screen is intentionally skipped for this pass.",
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
+private fun groupPhotosByRecency(photos: List<IndexedPhotoSummary>): List<GalleryBucket> {
+    if (photos.isEmpty()) return emptyList()
+
+    val zone = ZoneId.systemDefault()
+    val today = LocalDate.now(zone)
+
+    fun bucketFor(photo: IndexedPhotoSummary): String {
+        val ts = photo.captionedAt ?: photo.indexedAt ?: return "Earlier"
+        val date = Instant.ofEpochMilli(ts).atZone(zone).toLocalDate()
+        val daysAgo = ChronoUnit.DAYS.between(date, today)
+        return when {
+            daysAgo == 0L -> "Today"
+            daysAgo == 1L -> "Yesterday"
+            daysAgo in 2L..6L -> "This Week"
+            date.year == today.year && date.monthValue == today.monthValue -> "This Month"
+            else -> "Earlier"
+        }
+    }
+
+    val grouped = linkedMapOf(
+        "Today" to mutableListOf<IndexedPhotoSummary>(),
+        "Yesterday" to mutableListOf<IndexedPhotoSummary>(),
+        "This Week" to mutableListOf<IndexedPhotoSummary>(),
+        "This Month" to mutableListOf<IndexedPhotoSummary>(),
+        "Earlier" to mutableListOf<IndexedPhotoSummary>()
+    )
+
+    photos.forEach { photo ->
+        grouped.getValue(bucketFor(photo)).add(photo)
+    }
+
+    return grouped
+        .filterValues { it.isNotEmpty() }
+        .map { (title, items) -> GalleryBucket(title, items) }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Photo detail bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun PhotoDetailSheetContent(
@@ -741,10 +898,10 @@ private fun PhotoDetailSheetContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
         ) {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
+            TextButton(onClick = onDismiss) { Text("Close") }
         }
+
+        // Full photo
         val ctx = LocalContext.current
         AsyncImage(
             model = ImageRequest.Builder(ctx)
@@ -753,7 +910,7 @@ private fun PhotoDetailSheetContent(
                 .build(),
             contentDescription = null,
             onError = { err ->
-                Log.e(TAG, "Detail modal load failed photoId=$photoId uri=$uri: ${err.result.throwable}")
+                Log.e(TAG, "Detail modal failed photoId=$photoId: ${err.result.throwable}")
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -761,31 +918,81 @@ private fun PhotoDetailSheetContent(
                 .clip(RoundedCornerShape(12.dp)),
             contentScale = ContentScale.Fit
         )
+
+        // ── Match breakdown ───────────────────────────────────────────────
         if (searchResult != null) {
             Text(
                 "Match breakdown",
                 style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary
             )
-            Text(
-                text = "Combined score: ${"%.3f".format(searchResult.score)}",
-                style = MaterialTheme.typography.bodyMedium
+
+            // Combined score as large text + bar
+            ScoreRow(
+                label = "Combined score",
+                value = searchResult.score,
+                barColor = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                textColor = MaterialTheme.colorScheme.onSurface,
+                bold = true
             )
-            Text(
-                text = "CLIP cosine: ${"%.3f".format(searchResult.clipSimilarity)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                modifier = Modifier.padding(vertical = 2.dp)
             )
-            Text(
-                text = "Caption embedding cosine: ${"%.3f".format(searchResult.captionEmbeddingSimilarity)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            // Sub-scores
+            ScoreRow(
+                label = "CLIP visual",
+                value = searchResult.clipSimilarity,
+                barColor = MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                textColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                text = "Caption text match: ${if (searchResult.lexicalMatch) "Yes" else "No"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            ScoreRow(
+                label = "Caption embedding",
+                value = searchResult.captionEmbeddingSimilarity,
+                barColor = MaterialTheme.colorScheme.secondary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                textColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Lexical chip
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Caption text match",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                val chipColor = if (searchResult.lexicalMatch)
+                    MaterialTheme.colorScheme.secondaryContainer
+                else
+                    MaterialTheme.colorScheme.surfaceVariant
+                val chipTextColor = if (searchResult.lexicalMatch)
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100.dp))
+                        .background(chipColor)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (searchResult.lexicalMatch) "✓ Match" else "No match",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = chipTextColor
+                    )
+                }
+            }
+
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
         } else {
             Text(
@@ -795,9 +1002,12 @@ private fun PhotoDetailSheetContent(
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
         }
+
+        // ── Gemma caption ─────────────────────────────────────────────────
         Text(
             "Gemma caption",
             style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.secondary
         )
         if (recaptioning) {
@@ -807,9 +1017,7 @@ private fun PhotoDetailSheetContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 CircularProgressIndicator(
-                    modifier = Modifier
-                        .width(20.dp)
-                        .height(20.dp),
+                    modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.secondary
                 )
@@ -822,9 +1030,11 @@ private fun PhotoDetailSheetContent(
         } else {
             Text(
                 text = captionText ?: "Loading…",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
+
         recaptionError?.let {
             Text(
                 text = it,
@@ -832,6 +1042,7 @@ private fun PhotoDetailSheetContent(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+
         Button(
             onClick = {
                 scope.launch {
@@ -848,6 +1059,7 @@ private fun PhotoDetailSheetContent(
             },
             enabled = !recaptioning,
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(100),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -855,5 +1067,55 @@ private fun PhotoDetailSheetContent(
         ) {
             Text(if (recaptioning) "Re-captioning…" else "Re-caption with Gemma")
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Score row helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ScoreRow(
+    label: String,
+    value: Float,
+    barColor: Color,
+    trackColor: Color,
+    textColor: Color,
+    bold: Boolean = false
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = value.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 600),
+        label = "scoreAnim"
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = label,
+                style = if (bold) MaterialTheme.typography.bodyMedium
+                        else MaterialTheme.typography.bodySmall,
+                fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+                color = textColor
+            )
+            Text(
+                text = "%.3f".format(value),
+                style = if (bold) MaterialTheme.typography.bodyMedium
+                        else MaterialTheme.typography.bodySmall,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold,
+                color = barColor
+            )
+        }
+        LinearProgressIndicator(
+            progress = { animatedProgress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (bold) 6.dp else 4.dp)
+                .clip(RoundedCornerShape(4.dp)),
+            color = barColor,
+            trackColor = trackColor
+        )
     }
 }
