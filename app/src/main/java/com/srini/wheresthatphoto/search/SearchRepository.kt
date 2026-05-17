@@ -9,7 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import kotlin.math.sqrt
+import com.srini.wheresthatphoto.ml.cosineSimilarity
+import kotlin.math.max
 
 private const val TAG = "WTP/Search"
 
@@ -54,6 +55,7 @@ class SearchRepository(
             val captionQuery = async { textEncoder.embed(q) }
 
             val dao = database.photoDao()
+            val identityDao = database.identityDao()
             val photos = dao.getAllPhotos().associateBy { it.id }
             val captionsById = dao.getAllCaptions().associateBy { it.photoId }
             val clipEmbeddings = dao.getAllClipEmbeddings().associate { it.photoId to it.embedding }
@@ -67,6 +69,16 @@ class SearchRepository(
             val capQ = captionQuery.await()
             val qLower = q.lowercase()
             val lexicalTerms = qLower.split(Regex("\\s+")).filter { it.length >= 2 }
+
+            val identityIds = identityDao.findIdentityIdsByName(q)
+            val identityPhotoIds = if (identityIds.isEmpty()) {
+                emptySet()
+            } else {
+                identityDao.getPhotoIdsForIdentities(identityIds).toHashSet()
+            }
+            if (identityPhotoIds.isNotEmpty()) {
+                Log.d(TAG, "search: identity name match → ${identityPhotoIds.size} photo(s)")
+            }
 
             val ranked = ArrayList<ScoredPhoto>()
             var skippedNoClip = 0
@@ -85,8 +97,14 @@ class SearchRepository(
                 } else {
                     lexicalTerms.all { captionText.contains(it) }
                 }
-                val fused = 0.45f * clipSim + 0.55f * capSim + if (lexical) LEXICAL_BONUS else 0f
-                if (fused < minSimilarity && !lexical) {
+                val identityMatch = id in identityPhotoIds
+                var fused = 0.45f * clipSim + 0.55f * capSim +
+                    (if (lexical) LEXICAL_BONUS else 0f) +
+                    (if (identityMatch) IDENTITY_BONUS else 0f)
+                if (identityMatch) {
+                    fused = max(fused, minSimilarity + 0.02f)
+                }
+                if (fused < minSimilarity && !lexical && !identityMatch) {
                     Log.v(TAG, "  skip $id: clipSim=${"%.3f".format(clipSim)} capSim=${"%.3f".format(capSim)} fused=${"%.3f".format(fused)}")
                     skippedLowScore++
                     continue
@@ -189,20 +207,6 @@ class SearchRepository(
         summaries
     }
 
-    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
-        if (a.size != b.size) return -1f
-        var dot = 0f
-        var aNorm = 0f
-        var bNorm = 0f
-        for (i in a.indices) {
-            dot += a[i] * b[i]
-            aNorm += a[i] * a[i]
-            bNorm += b[i] * b[i]
-        }
-        val denominator = sqrt(aNorm.toDouble()) * sqrt(bNorm.toDouble())
-        return if (denominator == 0.0) -1f else (dot / denominator).toFloat()
-    }
-
     private data class ScoredPhoto(
         val photoId: String,
         val fused: Float,
@@ -214,6 +218,7 @@ class SearchRepository(
     companion object {
         private const val DEFAULT_MIN_SIMILARITY = 0.25f
         private const val LEXICAL_BONUS = 0.08f
+        private const val IDENTITY_BONUS = 0.15f
 
         // Gemma fallback: minimum fused score to be considered a candidate for reranking.
         // Set low enough to catch synonym misses (deity/god fused ≈ 0.18).

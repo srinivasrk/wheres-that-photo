@@ -1,6 +1,7 @@
 package com.srini.wheresthatphoto.indexing
 
 import android.content.ContentResolver
+import android.content.Context
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.util.Log
@@ -9,11 +10,15 @@ import com.srini.wheresthatphoto.data.AppDatabase
 import com.srini.wheresthatphoto.data.CaptionEmbeddingEntity
 import com.srini.wheresthatphoto.data.CaptionEntity
 import com.srini.wheresthatphoto.data.ClipEmbeddingEntity
+import com.srini.wheresthatphoto.data.FaceThumbnailStore
+import com.srini.wheresthatphoto.data.IdentityKind
 import com.srini.wheresthatphoto.data.PhotoEntity
 import com.srini.wheresthatphoto.media.MediaStoreRepository
 import com.srini.wheresthatphoto.media.PhotoMetadataExtractor
 import com.srini.wheresthatphoto.ml.ClipEncoder
+import com.srini.wheresthatphoto.ml.FaceDetectorEngine
 import com.srini.wheresthatphoto.ml.GemmaCaptioner
+import com.srini.wheresthatphoto.ml.PetRegionDetector
 import com.srini.wheresthatphoto.ml.TextEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -24,11 +29,15 @@ import kotlinx.coroutines.withContext
 private const val TAG = "WTP/Indexer"
 
 class Indexer(
+    private val appContext: Context,
     private val mediaStoreRepository: MediaStoreRepository,
     private val clipEncoder: ClipEncoder,
     private val textEncoder: TextEncoder,
     private val gemmaCaptioner: GemmaCaptioner,
     private val photoMetadataExtractor: PhotoMetadataExtractor,
+    private val faceDetector: FaceDetectorEngine,
+    private val petRegionDetector: PetRegionDetector,
+    private val faceClusterer: FaceClusterer,
     private val database: AppDatabase
 ) {
     /**
@@ -159,6 +168,27 @@ class Indexer(
                 }
                 dao.upsertClipEmbedding(ClipEmbeddingEntity(photoId, clipEmbedding))
 
+                emit(IndexProgress(current, total, uriStr, IndexPhase.FaceDetection, null))
+                val identityDao = database.identityDao()
+                identityDao.deleteFacesForPhoto(photoId)
+                val personRegions = faceDetector.detect(bitmap)
+                val personCount = faceClusterer.indexRegions(
+                    photoId, bitmap, personRegions, IdentityKind.PERSON
+                )
+                val petRegions = petRegionDetector.detect(bitmap)
+                val petCount = faceClusterer.indexRegions(
+                    photoId, bitmap, petRegions, IdentityKind.PET
+                )
+                val faceTotal = personCount + petCount
+                val faceStatus = when (faceTotal) {
+                    0 -> "No faces detected"
+                    1 -> "1 face indexed"
+                    else -> "$faceTotal faces indexed"
+                }
+                Log.d(TAG, "[$current/$total] $faceStatus (people=$personCount pets=$petCount)")
+                dao.upsertPhoto(photo.copy(facesIndexedAt = now))
+                emit(IndexProgress(current, total, uriStr, IndexPhase.FaceDetection, faceStatus))
+
                 emit(IndexProgress(current, total, uriStr, IndexPhase.Captioning, null))
                 Log.d(TAG, "[$current/$total] Extracting EXIF metadata…")
                 val metadata = photoMetadataExtractor.extract(contentResolver, uri)
@@ -226,10 +256,15 @@ class Indexer(
             caption
         }
 
-    /** Wipe every table — photos, embeddings, captions. */
+    suspend fun countIndexedFaces(): Int = withContext(Dispatchers.IO) {
+        database.identityDao().countFaces()
+    }
+
+    /** Wipe every table — photos, embeddings, captions, identities, face thumbnails. */
     suspend fun clearAllData(): Unit = withContext(Dispatchers.IO) {
         Log.i(TAG, "clearAllData: nuking DB")
-        database.photoDao().clearAll()
+        database.photoDao().clearAll(database.identityDao())
+        FaceThumbnailStore.deleteAll(appContext)
         Log.i(TAG, "clearAllData: done")
     }
 

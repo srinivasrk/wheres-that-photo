@@ -66,7 +66,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,9 +94,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.srini.wheresthatphoto.data.IdentityKind
 import com.srini.wheresthatphoto.indexing.IndexPhase
 import com.srini.wheresthatphoto.indexing.IndexProgress
+import com.srini.wheresthatphoto.people.IdentitySummary
 import com.srini.wheresthatphoto.search.IndexedPhotoSummary
+import java.io.File
 import com.srini.wheresthatphoto.search.SearchResult
 import com.srini.wheresthatphoto.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
@@ -137,7 +142,9 @@ fun AppScreen(
     onSearch: suspend (String) -> List<SearchResult>,
     onGetCaption: suspend (String) -> String?,
     onRecaption: suspend (String) -> String,
-    onLoadIndexedPhotos: suspend () -> List<IndexedPhotoSummary>
+    onLoadIndexedPhotos: suspend () -> List<IndexedPhotoSummary>,
+    onLoadIdentities: suspend () -> Pair<List<IdentitySummary>, List<IdentitySummary>>,
+    onNameIdentity: suspend (identityId: String, displayName: String, kind: IdentityKind) -> Unit
 ) {
     var activeTab by rememberSaveable { mutableStateOf(HomeTab.Gallery) }
     var indexedPhotos by remember { mutableStateOf<List<IndexedPhotoSummary>>(emptyList()) }
@@ -148,16 +155,29 @@ fun AppScreen(
     var searching by remember { mutableStateOf(false) }
     var hasSearched by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(emptyList<SearchResult>()) }
+    var peopleIdentities by remember { mutableStateOf(emptyList<IdentitySummary>()) }
+    var petsIdentities by remember { mutableStateOf(emptyList<IdentitySummary>()) }
+    var namingIdentity by remember { mutableStateOf<IdentitySummary?>(null) }
+    var nameDraft by rememberSaveable { mutableStateOf("") }
+    var nameKindDraft by rememberSaveable { mutableStateOf(IdentityKind.PERSON.name) }
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val nameSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    LaunchedEffect(Unit, indexing) {
+    suspend fun refreshLibraryAndIdentities() {
         loadingPhotos = true
         try {
             indexedPhotos = onLoadIndexedPhotos()
+            val (people, pets) = onLoadIdentities()
+            peopleIdentities = people
+            petsIdentities = pets
         } finally {
             loadingPhotos = false
         }
+    }
+
+    LaunchedEffect(Unit, indexing) {
+        refreshLibraryAndIdentities()
     }
     LaunchedEffect(statusMessage) {
         if (statusMessage.isBlank()) {
@@ -196,7 +216,15 @@ fun AppScreen(
                         onPhotoClick = { detailTarget = DetailTarget.FromLibrary(it) },
                         onPickPhotos = onPickPhotos
                     )
-                    HomeTab.People -> PeoplePetsScreen(photos = indexedPhotos)
+                    HomeTab.People -> PeoplePetsScreen(
+                        people = peopleIdentities,
+                        pets = petsIdentities,
+                        onIdentityClick = { identity ->
+                            namingIdentity = identity
+                            nameDraft = identity.displayName.orEmpty()
+                            nameKindDraft = identity.kind.name
+                        }
+                    )
                     HomeTab.Search -> SearchScreen(
                         query = query,
                         onQueryChange = { query = it },
@@ -256,6 +284,66 @@ fun AppScreen(
                     onGetCaption = onGetCaption,
                     onRecaption = onRecaption
                 )
+            }
+        }
+    }
+
+    namingIdentity?.let { identity ->
+        ModalBottomSheet(
+            onDismissRequest = { namingIdentity = null },
+            sheetState = nameSheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    if (identity.displayName == null) "Who is this?" else "Edit name",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedTextField(
+                    value = nameDraft,
+                    onValueChange = { nameDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Name") },
+                    singleLine = true
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = nameKindDraft == IdentityKind.PERSON.name,
+                        onClick = { nameKindDraft = IdentityKind.PERSON.name },
+                        label = { Text("Person") }
+                    )
+                    FilterChip(
+                        selected = nameKindDraft == IdentityKind.PET.name,
+                        onClick = { nameKindDraft = IdentityKind.PET.name },
+                        label = { Text("Pet") }
+                    )
+                }
+                Button(
+                    onClick = {
+                        val trimmed = nameDraft.trim()
+                        if (trimmed.isEmpty()) return@Button
+                        scope.launch {
+                            onNameIdentity(
+                                identity.identityId,
+                                trimmed,
+                                IdentityKind.valueOf(nameKindDraft)
+                            )
+                            namingIdentity = null
+                            refreshLibraryAndIdentities()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = nameDraft.isNotBlank()
+                ) {
+                    Text("Save")
+                }
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -539,6 +627,8 @@ private fun IndexingBanner(progress: IndexProgress?) {
                     if (progress != null) {
                         val phaseText = when (progress.phase) {
                             IndexPhase.Embedding -> "Computing visual embedding..."
+                            IndexPhase.FaceDetection -> progress.captionText
+                                ?: "Detecting faces and pets…"
                             IndexPhase.Captioning -> "Generating Gemma caption..."
                         }
                         Text(
@@ -567,64 +657,114 @@ private fun IndexingBanner(progress: IndexProgress?) {
 }
 
 @Composable
-private fun PeoplePetsScreen(photos: List<IndexedPhotoSummary>) {
-    val people = photos.take(6)
-    val pets = photos.drop(6).take(3)
+private fun PeoplePetsScreen(
+    people: List<IdentitySummary>,
+    pets: List<IdentitySummary>,
+    onIdentityClick: (IdentitySummary) -> Unit
+) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
         item {
             Text("People\n& Pets", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, lineHeight = MaterialTheme.typography.displaySmall.lineHeight)
-            Text("Faces clustered on-device by the local vision model.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Faces and pets detected on-device. Tap a circle to add a name.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        item { PeopleSection("People", people) }
-        item { PeopleSection("Pets", pets) }
+        item { PeopleSection("People", people, onIdentityClick) }
+        item { PeopleSection("Pets", pets, onIdentityClick) }
     }
 }
 
 @Composable
-private fun PeopleSection(label: String, photos: List<IndexedPhotoSummary>) {
+private fun PeopleSection(
+    label: String,
+    identities: List<IdentitySummary>,
+    onIdentityClick: (IdentitySummary) -> Unit
+) {
+    val display = identities.take(6)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("$label · ${photos.size}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("View all", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        }
-        val rows = max(2, photos.chunked(3).size)
-        LazyVerticalGrid(columns = GridCells.Fixed(3), userScrollEnabled = false, modifier = Modifier.height((rows * 160).dp)) {
-            items(photos) { photo ->
-                CirclePersonCard(photo = photo, title = "Person", subtitle = "photos")
+            Text("$label · ${identities.size}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (identities.isNotEmpty()) {
+                Text("View all", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             }
-            if (photos.size < 6) {
-                items(6 - photos.size) { CircleUnknownCard() }
+        }
+        if (display.isEmpty()) {
+            Text(
+                "Index photos with faces to see $label here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            val rows = max(1, display.chunked(3).size)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                userScrollEnabled = false,
+                modifier = Modifier.height((rows * 160).dp)
+            ) {
+                items(display, key = { it.identityId }) { identity ->
+                    CircleIdentityCard(identity = identity, onClick = { onIdentityClick(identity) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CirclePersonCard(photo: IndexedPhotoSummary, title: String, subtitle: String) {
+private fun CircleIdentityCard(identity: IdentitySummary, onClick: () -> Unit) {
     val ctx = LocalContext.current
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 12.dp)) {
-        AsyncImage(
-            model = ImageRequest.Builder(ctx).data(photo.uri).crossfade(true).build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(110.dp)
-                .clip(CircleShape)
-        )
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun CircleUnknownCard() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 12.dp)) {
-        Box(
-            modifier = Modifier.size(110.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) { CircleIcon(Icons.Outlined.PersonAdd, null) }
-        Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Text("Who is this?", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.bodyMedium)
+    val named = identity.displayName != null
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .padding(bottom = 12.dp)
+            .clickable(onClick = onClick)
+    ) {
+        if (named && identity.thumbnailPath != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(ctx).data(File(identity.thumbnailPath)).crossfade(true).build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(110.dp)
+                    .clip(CircleShape)
+            )
+        } else if (identity.thumbnailPath != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(ctx).data(File(identity.thumbnailPath)).crossfade(true).build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(110.dp)
+                    .clip(CircleShape)
+            )
+        } else {
+            Box(
+                modifier = Modifier.size(110.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) { CircleIcon(Icons.Outlined.PersonAdd, null) }
+        }
+        if (named) {
+            Text(
+                identity.displayName!!,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Text(
+                "${identity.photoCount} photos",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Surface(shape = RoundedCornerShape(100.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text(
+                    "Who is this?",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         }
     }
 }

@@ -111,6 +111,13 @@ adb shell mkdir -p /data/local/tmp/llm
 adb push tmp/gemma-3n-E4B-it-litert-preview.task /data/local/tmp/llm/model.task
 ```
 
+**MediaPipe (People & Pets)** — face and pet region detection
+
+Copy into `app/src/main/assets/models/mediapipe/` (see [app/src/main/assets/models/mediapipe/README.md](app/src/main/assets/models/mediapipe/README.md)):
+
+- `face_detection_short_range.tflite` — from the [MediaPipe Face Detector](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector) Android sample assets
+- `efficientdet_lite0.tflite` — from the [MediaPipe Object Detector](https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector) sample (dog/cat labels)
+
 **Expected asset layout:**
 ```
 app/src/main/assets/models/
@@ -121,6 +128,9 @@ app/src/main/assets/models/
   minilm/
     model.onnx  tokenizer.json  vocab.txt
     config.json  tokenizer_config.json  special_tokens_map.json
+  mediapipe/
+    face_detection_short_range.tflite
+    efficientdet_lite0.tflite
 ```
 
 ### 3. Build and run

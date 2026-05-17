@@ -13,7 +13,8 @@ data class PhotoEntity(
     val width: Int?,
     val height: Int?,
     val indexedAt: Long?,
-    val captionedAt: Long?
+    val captionedAt: Long?,
+    val facesIndexedAt: Long? = null
 )
 
 @Entity(tableName = "captions")

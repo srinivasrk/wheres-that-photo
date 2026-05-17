@@ -2,6 +2,7 @@ package com.srini.wheresthatphoto.indexing
 
 enum class IndexPhase {
     Embedding,
+    FaceDetection,
     Captioning
 }
 

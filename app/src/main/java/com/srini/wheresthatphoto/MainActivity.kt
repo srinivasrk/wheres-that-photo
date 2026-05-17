@@ -128,6 +128,12 @@ class MainActivity : ComponentActivity() {
                     },
                     onLoadIndexedPhotos = {
                         appContainer.searchRepository.getIndexedPhotoSummaries()
+                    },
+                    onLoadIdentities = {
+                        appContainer.peopleRepository.loadIdentities()
+                    },
+                    onNameIdentity = { identityId, displayName, kind ->
+                        appContainer.peopleRepository.nameIdentity(identityId, displayName, kind)
                     }
                 )
             }
@@ -151,9 +157,10 @@ class MainActivity : ComponentActivity() {
                     .collect { progress -> indexProgress = progress }
                 val readyCount = appContainer.searchRepository
                     .getIndexedPhotoSummaries().size
-                Log.i(TAG, "Indexing complete — $readyCount photo(s) fully ready in DB")
+                val faceCount = appContainer.indexer.countIndexedFaces()
+                Log.i(TAG, "Indexing complete — $readyCount photo(s), $faceCount face(s) in DB")
                 statusMessage =
-                    "Done: $readyCount photo(s) fully indexed with MobileCLIP + captions. You can search now."
+                    "Done: $readyCount photo(s) indexed, $faceCount face(s) detected. You can search and tag people in People & Pets."
             } catch (e: Exception) {
                 Log.e(TAG, "Indexing failed", e)
                 statusMessage = e.message ?: "Indexing failed."

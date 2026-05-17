@@ -63,7 +63,8 @@ interface PhotoDao {
     suspend fun deleteAllPhotos()
 
     @Transaction
-    suspend fun clearAll() {
+    suspend fun clearAll(identityDao: IdentityDao) {
+        identityDao.clearAllIdentityData()
         deleteAllClipEmbeddings()
         deleteAllCaptionEmbeddings()
         deleteAllCaptions()
